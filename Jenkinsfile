@@ -6,6 +6,3 @@ node {
   stage 'deploy'
   echo 'avengers'
 }
-
-
-
