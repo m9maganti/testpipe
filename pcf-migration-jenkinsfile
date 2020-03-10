@@ -1,0 +1,756 @@
+#!groovy
+
+import java.text.SimpleDateFormat
+
+isPullRequest = env.CHANGE_ID ? true : false
+
+oldInstancesfileName = "\$WORKSPACE/old_instances.dat"
+newInstancesfileName = "\$WORKSPACE/new_instances.dat"
+
+// Components directories
+Dir = "XXXX"
+Dir = "XXXX"
+Dir = "XXXXX"
+Dir = "XXXXXX"
+Dir = "XXXXXXXX"
+Dir = "XXXXXXXX"
+Dir = "XXXXXXXX"
+Dir = "XXXXXX"
+
+// Applications names (Will be retrieved from package.json)
+AppName = ""
+AppName = ""
+AppName = ""
+AppName = ""
+
+// Application build state (will be computed depending on change fileset, branch and force options)
+hasBuild = false
+hasBuild = false
+hasBuild = false
+hasBuild = false
+
+isBuildTriggered = false
+isAutomationTestPassed = false
+
+rtServerId = 'XXX'
+rtSpace = "dev" //Set default values to dev, in case want to force a build on a custom branch
+rtServer = Artifactory.server rtServerId
+rtRepoNpm = "XXXXX"
+rtRepoGen = "XXXXX"
+oracleClientArtifact = "XXXXX"
+oracleClientArtifactPath = "XXXX"
+
+cfOrganization = "XXXXX"
+cfSpace = "Dev" //Set default values to dev, in case want to force a build on a custom branch
+cf1CredentialId = "XXXXX" // username/password credentials for PCF login
+XXXXXXXX = "XXXXXX" // username/password credentials for PCF login
+XXXXXXXX = "XXXXXXXXXX"
+XXXXXXXX = "" //"XXXXXXX"
+XXXXXXXX = "XXXXXXXXXXX"
+XXXXXXXX = "XXXXXXXXXXXXXXXXX"
+XXXXXXXXPrivate = "XXXXXXXX"
+XXXXXXXXPrivate = "XXXXXXXX"
+cfVarFiles = "--vars-file ../vars.space-all.yml --vars-file ../vars.space-dev.yml"
+
+secretVarsFileCredentialId = "SecretConfigDevID" // file credentials for apps
+
+startTime = new Date();
+formattedStartTimeInfo = (new SimpleDateFormat("dd/MM/yyyy-HH:mm:ss")).format(startTime)
+formattedStartTimeVersion = (new SimpleDateFormat("yyyy.MMdd.HHmmss")).format(startTime)
+
+//For PR branches we need the origin branch name and not the PR branch itself in some place
+originBranchName = env.BRANCH_NAME;
+extendedBranchName = env.BRANCH_NAME;
+if (env.CHANGE_BRANCH != null && !env.CHANGE_BRANCH.isEmpty()) {
+    originBranchName = env.CHANGE_BRANCH;
+    extendedBranchName = env.BRANCH_NAME + "[" + env.CHANGE_BRANCH + "]";
+}
+
+// !!!careful: changing reducedBranchName will break cleanPcfInstances.sh
+reducedBranchName = originBranchName;
+reducedBranchName = reducedBranchName.substring(reducedBranchName.lastIndexOf('/') + 1); ;
+reducedBranchName = reducedBranchName.replace("_", "");
+reducedBranchName = reducedBranchName.replace("-", "");
+if (reducedBranchName.length() > 30) {
+    reducedBranchName = reducedBranchName.substring(0, 30);
+}
+reducedBranchName = reducedBranchName.toLowerCase();
+
+buildVersion = reducedBranchName + "-" + formattedStartTimeVersion;
+
+hostPrefix = "connectanalytics"
+isBuildableBranch = false
+needJiraTag = false
+if (BRANCH_NAME == 'master') {
+    rtSpace = "qa"
+    cfSpace = "PubProduction"
+    cfCredentialId = "DXXXX"
+    XXXXXXXX = "SXXXX"
+    XXXXXXXX = "XXXXX"
+    XXXXXXXX = "XXXXX"
+    XXXXXXXX = "XXXXXX"
+    XXXXXXXX = "XXXXX"
+    XXXXXXXXPrivate = "XXXXXXXX"
+    XXXXXXXXPrivate = "XXXXXX"
+    secretVarsFileCredentialId = "SecretConfigProdID"
+    cfVarFiles = "--vars-file ../vars.space-all.yml --vars-file ../vars.space-prod.yml"
+    isBuildableBranch = true
+    needJiraTag = true;
+} else if (BRANCH_NAME == 'develop') {
+    rtSpace = "qa"
+    cfSpace = "Test"
+    XXXXXXXX = "XXXXXXXX"
+    XXXXXXXX = "XXXXXXXX"
+    XXXXXXXXPrivate = "XXXXXXXX"
+    XXXXXXXXPrivate = "XXXXXXXX"
+    isBuildableBranch = true
+    needJiraTag = true;
+} else if (isPullRequest) {
+    hostPrefix += '-' + reducedBranchName;
+    isBuildableBranch = true
+} else {
+    hostPrefix += '-' + reducedBranchName;
+}
+
+pipeline {
+    agent {
+        label 'RHEL7'
+    }
+
+    parameters {
+        // Choice default must not be empty string else isBuildable will be always true
+        choice(choices: [" ", "ALL", "XXXXXXXX", "XXXXXXXX", "XXXXXXXX", "XXXXXXXX", "XXXXXXXX"], description: "", name: "forceBuild")
+    }
+
+    environment {
+        CI = "true"
+        NODE_ENV = "production"
+        SCANNER_HOME = tool('SonarQube')
+        CF_HOME = "${WORKSPACE}" //Allow cf to have its own env and avoid login/logout conflicts
+        CF_DIAL_TIMEOUT = 15 // Increase the timout, set to 5 by default but had some timeout issues
+        NPM_TOOL = 'nodejs-default'
+    }
+
+    tools {
+        nodejs "nodejs-default"
+        jdk "jdk-1.8"
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timestamps()
+        timeout(time: 50, unit: 'MINUTES') //Ensure build does not last forever
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Configuration') {
+            steps {
+                script {
+                    def pkg = readJSON(file: "${XXXXXXXXDir}/package.json")
+                    XXXXXXXXAppName = pkg['name']
+
+                    pkg = readJSON(file: "${XXXXXXXXDir}/package.json")
+                    XXXXXXXXAppName = pkg['name']
+
+                    pkg = readJSON(file: "${XXXXXXXXDir}/package.json")
+                    XXXXXXXXAppName = pkg['name']
+
+                    pkg = readJSON(file: "${XXXXXXXXServiceDir}/package.json")
+                    XXXXXXXXServiceAppName = pkg['name']
+
+                    hasXXXXXXXXBuild = isBuildable(XXXXXXXXDir, XXXXXXXX)
+                    hasXXXXXXXX = isBuildable(XXXXXXXX, XXXXXXXX, XXXXXXXXDir, XXXXXXXX)
+                    hasXXXXXXXXBuild = isBuildable(XXXXXXXXDir, XXXXXXXX)
+                    hasXXXXXXXXBuild = isBuildable(XXXXXXXXServiceDir, XXXXXXXX)
+                    sh "> ${oldInstancesfileName}"
+                    sh "> ${newInstancesfileName}"
+                    sendStartBuildNotifications();
+
+                    echo ">>>>> originBranchName= ${originBranchName}";
+                    echo ">>>>> reducedBranchName= ${reducedBranchName}";
+                    echo ">>>>> extendedBranchName= ${extendedBranchName}";
+                }
+
+                rtNpmResolver(
+                        id: "NPM_RESOLVER",
+                        serverId: rtServerId,
+                        repo: "${rtRepoNpm}-${rtSpace}"
+                )
+
+                rtNpmDeployer(
+                        id: "NPM_DEPLOYER",
+                        serverId: rtServerId,
+                        repo: "${rtRepoNpm}-${rtSpace}"
+                )
+
+                rtBuildInfo(
+                        // Optional - Maximum builds to keep in Artifactory.
+                        maxBuilds: 1,
+
+                        // Optional - Maximum days to keep the builds in Artifactory.
+                        //maxDays: 2,
+
+                        // Optional - List of build numbers to keep in Artifactory.
+                        //doNotDiscardBuilds: ['3'],
+
+                        // Optional (the default is false) - Also delete the build artifacts when deleting a build.
+                        //deleteBuildArtifacts: true,
+                )
+            }
+        }
+
+        stage("CommonLib  Build") {
+            when {
+                expression { return (hasXXXXXXXX || hasXXXXXXXXBuild || hasXXXXXXXXBuild || hasXXXXXXXXBuild) }
+            }
+            steps {
+                rtNpmInstall(
+                        tool: NPM_TOOL,
+                        resolverId: "NPM_RESOLVER",
+                        path: XXXXXXXX,
+                        args: '--quiet'
+                )
+            }
+        }
+
+
+        stage("XXXXXXXX Install") {
+            when {
+                expression { return hasXXXXXXXX }
+            }
+            steps {
+                rtNpmInstall(
+                        tool: NPM_TOOL,
+                        resolverId: "NPM_RESOLVER",
+                        path: XXXXXXXX,
+                        args: '--quiet'
+                )
+            }
+        }
+
+        stage("XXXXXXXX Test") {
+            when {
+                expression { return hasXXXXXXXX }
+            }
+            steps {
+                dir(XXXXXXXX) {
+                    sh 'npm run test:ci'
+                }
+            }
+        }
+
+        stage("XXXXXXXX Build") {
+            when {
+                expression { return hasXXXXXXXX }
+            }
+            steps {
+                dir(XXXXXXXX) {
+                    sh "npm run build"
+                }
+            }
+        }
+
+        stage("XXXXXXXX Install") {
+            when {
+                expression { return hasXXXXXXXX }
+            }
+            steps {
+                rtNpmInstall(
+                        tool: NPM_TOOL,
+                        resolverId: "NPM_RESOLVER",
+                        path: XXXXXXXX,
+                        args: '--quiet'
+                )
+            }
+        }
+
+        stage("XXXXXXXX Build") {
+            when {
+                expression { return hasXXXXXXXX }
+            }
+            steps {
+                dir(XXXXXXXX) {
+                    sh "npm run build"
+                }
+            }
+        }
+
+        stage("XXXXXXXX Install & Build") {
+            when {
+                expression { return hasXXXXXXXX }
+            }
+            steps {
+                rtNpmInstall(
+                        tool: NPM_TOOL,
+                        resolverId: "NPM_RESOLVER",
+                        path: XXXXXXXXDir,
+                        args: '--quiet'
+                )
+                dir(XXXXXXXXDir) {
+                    sh "npm run build"
+                }
+            }
+        }
+
+        stage("XXXXXXXX Publish Artifact") {
+            when {
+                expression { return hasXXXXXXXX }
+            }
+            steps {
+                rtNpmPublish(
+                        deployerId: "NPM_DEPLOYER",
+                        tool: NPM_TOOL,
+                        path: XXXXXXXXDir
+                )
+            }
+        }
+
+        stage("XXXXXXXX Install & Build") {
+            when {
+                expression { return hasXXXXXXXXBuild }
+            }
+            steps {
+                rtNpmInstall(
+                        tool: NPM_TOOL,
+                        resolverId: "NPM_RESOLVER",
+                        path: XXXXXXXXDir,
+                        args: '--quiet'
+                )
+                dir(XXXXXXXXDir) {
+                    sh "npm run build"
+                }
+            }
+        }
+
+        stage("XXXXXXXX Test") {
+            when {
+                expression { return hasXXXXXXXXBuild }
+            }
+            steps {
+                dir(XXXXXXXXDir) {
+                    sh 'npm run test:ci'
+                }
+            }
+        }
+
+        stage("XXXXXXXX Publish Artifact") {
+            when {
+                expression { return hasXXXXXXXXBuild }
+            }
+            steps {
+                rtNpmPublish(
+                        tool: NPM_TOOL,
+                        deployerId: "NPM_DEPLOYER",
+                        path: XXXXXXXXDir
+                )
+            }
+        }
+
+        stage("XXXXXXXX Install & Build") {
+            when {
+                expression { return hasXXXXXXXXBuild }
+            }
+            steps {
+                rtNpmInstall(
+                        tool: NPM_TOOL,
+                        resolverId: "NPM_RESOLVER",
+                        path: XXXXXXXXDir,
+                        args: '--quiet'
+                )
+                dir(XXXXXXXXDir) {
+                    sh "npm run build"
+                }
+            }
+        }
+
+        stage("XXXXXXXX Test") {
+            when {
+                expression { return hasXXXXXXXXBuild }
+            }
+            steps {
+                dir("${XXXXXXXXDir}") {
+                    sh 'npm run test:ci'
+                }
+            }
+        }
+
+        stage("XXXXXXXX Build") {
+            when {
+                expression { return hasXXXXXXXXBuild }
+            }
+            steps {
+                dir("${XXXXXXXXDir}") {
+                    downloadArtifact(oracleClientArtifactPath, oracleClientArtifact)
+                    sh "unzip ${oracleClientArtifact} -d ./oracle"
+                    sh "chmod -R u+Xwr,g+r,o+r oracle" //Need to add permission otherwise pcf won't install the uncompressed artifact
+                    sh "rm ${oracleClientArtifact}" //remove the artifact after being unzipped
+                }
+            }
+        }
+
+        stage("XXXXXXXX Publish Artifact") {
+            when {
+                expression { return hasXXXXXXXXBuild }
+            }
+            steps {
+                rtNpmPublish(
+                        tool: NPM_TOOL,
+                        deployerId: "NPM_DEPLOYER",
+                        path: XXXXXXXXDir
+                )
+            }
+        }
+
+        stage("XXXXXXXX build & Install") {
+            when {
+                expression { return hasXXXXXXXXBuild }
+            }
+            steps {
+                rtNpmInstall(
+                        tool: NPM_TOOL,
+                        resolverId: "NPM_RESOLVER",
+                        path: XXXXXXXXServiceDir,
+                        args: '--quiet'
+                )
+
+                dir(XXXXXXXXServiceDir) {
+                    sh "npm run build"
+                }
+            }
+        }
+
+        stage('Sonarqube Analysis') {
+            when {
+                expression { return isBuildTriggered }
+            }
+            steps {
+                withSonarQubeEnv('sonarQube') {
+                    sh "${SCANNER_HOME}/bin/sonar-scanner " +
+                            " -Dsonar.projectKey=XXXXXX" +
+                            " -Dsonar.projectVersion=2.0" +
+                            " -Dsonar.sourceEncoding=UTF-8" +
+                            " -Dsonar.sources=${XXXXXXXX}/src,${XXXXXXXX}/src,${XXXXXXXXDir}/src,${XXXXXXXXDir}/src,${XXXXXXXX}" +
+                            " -Dsonar.exclusions=**/*.test.js,${XXXXXXXX}/ideas,newrelic.js" +
+                            " -Dsonar.coverage.exclusions=**/**" +
+                            " -Dsonar.links.ci=${env.JOB_URL}" +
+                            " -Dsonar.links.scm=${env.GIT_URL}"
+                }
+                timeout(time: 30, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+
+        stage("PCF Deploy 1") {
+            when {
+                expression { return isBuildTriggered }
+            }
+            steps {
+                script {
+                    deployAppsOnPcf(XXXXXXXX XXXXXXXX, XXXXXXXX, XXXXXXXXPrivate)
+                }
+            }
+        }
+
+        stage("PCF Deploy 2") {
+            when {
+                expression { return isBuildTriggered && XXXXXXXX.length() > 0 }
+            }
+            steps {
+                script {
+                    deployAppsOnPcf(XXXXXXXX, XXXXXXXX, XXXXXXXX, XXXXXXXXPrivate)
+                }
+            }
+        }
+
+        stage('Run automation tests') {
+            when {
+                //expression { return (isBuildable(automationTestDir) || isBuildTriggered) }
+                expression { return false }
+            }
+            steps {
+                dir(automationTestDir) {
+                    script {
+                        isAutomationTestPassed = true
+                        sh 'docker build -t conan_automationtest .' //create docker image
+                        sh 'docker run conan_automationtest'
+                    }
+                }
+            }
+        }
+
+        stage('Tag Jira') {
+            when {
+                expression { return needJiraTag }
+            }
+            steps {
+                script {
+                    try { // Don't fail the build if tag failed
+                        sh "git tag ${buildVersion}"
+                        sh "git push origin --tags"
+                    } catch (Exception e) {
+                        echo '>>>>> Error while pushing jira tag: ' + e.toString()
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            rtPublishBuildInfo(
+                    serverId: rtServerId
+            )
+
+            // Whatever Automation Test success or failed, need to retreive the results
+            script {
+                if (isAutomationTestPassed == true) {
+                    dir(automationTestDir) {
+                        // copy files from docker VM to jenkins VM
+                        sh 'docker cp `docker ps --latest -qaf "ancestor=conan_automationtest"`:/Workspace/Reports ./Workspace/output'
+                        // Publish Junit report to Jenkins console
+                        junit testResults: "Workspace/output/**/JUnit_Report.xml", keepLongStdio: true
+                    }
+                }
+            }
+            sh "cf logout" //ensure that an external jenkins job on the same box can cf push on this one
+        }
+        success {
+            sendEndBuildNotifications("SUCCESSFUL", false, true)
+        }
+        unstable {
+            sendEndBuildNotifications("UNSTABLE", false, false)
+        }
+        failure {
+            sendEndBuildNotifications("FAILED", true, false)
+            cleanupNewInstancesOnFailure()
+        }
+        aborted {
+            sendEndBuildNotifications("ABORTED", false, false)
+            cleanupNewInstancesOnFailure()
+        }
+        cleanup {
+            echo ">>>>>  Deleting root directory: ${pwd()}"
+            deleteDir()
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Send a notification email
+def sendEmailNotification(String state, Boolean attachLog) {
+    emailext(
+            recipientProviders: [[$class: 'CulpritsRecipientProvider'], [$class: 'RequesterRecipientProvider']],
+            subject: "[Jenkins] Build ${state} on branch ${extendedBranchName} (#${BUILD_NUMBER})",
+            body: '''${SCRIPT, template="groovy-html.template"}''',
+            mimeType: 'text/html',
+            attachmentsPattern: '**/output/**/*.html',
+            attachLog: attachLog
+    )
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Send a notification WebexTeam(Spark) message
+// Create a bot , get his token, add him to a room and get the room id:
+// Token of the bot BOT: https://developer.webex.com/my-apps/conandeploy (conandeploy@webex.bot)
+// Room Id: https://developer.webex.com/docs/api/v1/rooms/list-rooms
+// https://wiki.jenkins.io/display/JENKINS/Spark+Notifier+Plugin
+void sendSparkNotification(GString msg) {
+    sparkSend(
+            spaceList: [[spaceId: "XXXXXXXXXXXX"]],
+            credentialsId: "SparkBotID",
+            messageType: "markdown",
+            message: msg
+    )
+}
+
+String getMdBuildLink() {
+    String url = env.BUILD_URL.replaceFirst(/led.*?\./, "build.");
+    return "[Jenkins Build #${BUILD_NUMBER}](${url})";
+}
+
+String getMdGithubLink() {
+    String url = "XXXXXXX${originBranchName}"
+    return "[${extendedBranchName}](${url})";
+}
+
+String getMdJiraLink() {
+    def result = (originBranchName =~ /.*(CA-\d*)\D.*/)
+    if (result && result[0] && result[0][1]) {
+        String url = "https://intrado.atlassian.net/browse/${result[0][1]}";
+        return "for [Ticket ${result[0][1]}](${url})";
+    }
+    return "";
+}
+
+void sendStartBuildNotifications() {
+    if (isBuildTriggered && isBuildableBranch) {
+        sendSparkNotification("${getMdBuildLink()} **STARTED** on Branch ${getMdGithubLink()} ${getMdJiraLink()}.");
+    }
+}
+
+void sendEndBuildNotifications(String state, Boolean attachLog, Boolean succeed) {
+    if (isBuildTriggered && isBuildableBranch) {
+        sendEmailNotification(state, attachLog);
+        String link = "";
+        if (succeed) {
+            link = "  \nTest it on https://${hostPrefix}.${XXXXXXXX}"
+        }
+        sendSparkNotification("${getMdBuildLink()} **${state}** on Branch ${getMdGithubLink()} ${getMdJiraLink()}.${link}");
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Check if an application is buildable
+Boolean isBuildable(String appDir1, String appDir2 = "", String appDir3 = "", String appDir4 = "") {
+    Boolean isPreviousBuildFailedOnBuildableBranch = isBuildableBranch && currentBuild.getPreviousBuild() != null && currentBuild.getPreviousBuild().result == "FAILURE"
+    Boolean isFirstBuildOnBuildableBranch = isBuildableBranch && BUILD_NUMBER.equals("1");
+    Boolean isForced = (params.forceBuild == "ALL" || params.forceBuild.equals(appDir1) || params.forceBuild.equals(appDir2) || params.forceBuild.equals(appDir3) || params.forceBuild.equals(appDir4))
+    Boolean isChangeSetOnBuildableBranch = isBuildableBranch && (isBuildableChangeSet(appDir1) || isBuildableChangeSet(appDir2) || isBuildableChangeSet(appDir3) || isBuildableChangeSet(appDir4))
+    Boolean buildable = (isForced || isPreviousBuildFailedOnBuildableBranch || isFirstBuildOnBuildableBranch || isChangeSetOnBuildableBranch)
+    if (buildable) {
+        isBuildTriggered = true
+    }
+    echo ">>>>>  isBuildable: buildable=${buildable}, appDir=${appDir1} ${appDir2} ${appDir3} ${appDir4}, isForced=${isForced.toString()}, isBuildableBranch=${isBuildableBranch.toString()}, isFirstBuildOnBuildableBranch=${isFirstBuildOnBuildableBranch}, isChangeSetOnBuildableBranch: ${isChangeSetOnBuildableBranch.toString()}, isPreviousBuildFailedOnBuildableBranch=${isPreviousBuildFailedOnBuildableBranch.toString()},isBuildTriggered=${isBuildTriggered.toString()}"
+    return buildable
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Check if an application source code has been modified
+Boolean isBuildableChangeSet(String folder) {
+    println ">>>>> isBuildableChangeSet folder=" + folder;
+    if (folder == null || folder.isEmpty()) {
+        return false;
+    }
+    def changeLogSets = currentBuild.changeSets
+    if (changeLogSets == null || changeLogSets.isEmpty()) {
+        return false;
+    }
+    println ">>>>> isBuildableChangeSet changeLogSets.size=" + changeLogSets.size();
+    for (int i = 0; i < changeLogSets.size(); i++) {
+        def entries = changeLogSets[i].items;
+        for (int j = 0; j < entries.length; j++) {
+            def entry = entries[j];
+            //echo "${entry.commitId} by ${entry.author} on ${new Date(entry.timestamp)}: ${entry.msg}"
+            ArrayList files = new ArrayList(entry.affectedFiles);
+            println ">>>>> isBuildableChangeSet changeSets files.size=" + files.size();
+            for (int k = 0; k < files.size(); k++) {
+                def file = files[k];
+                //echo "  ${file.editType.name} ${file.path}"
+                String filePath = file.path;
+                println ">>>>> isBuildableChangeSet file.path=" + file.path;
+                String[] parts = filePath.split("/");
+                //Test if files in the root dir has been changed
+                //if (parts.length == 1 && parts[0].length() > 0) {
+                //    return true;
+                //}else
+                //Test if the changeset is part of the provided folder
+                if (parts.length > 1 && parts[0].length() > 0 && parts[0].equals(folder)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Download an artifact
+void downloadArtifact(String artifactPath, String artifact, String destFolder = ".") {
+    def downloadSpec = """{
+                                         "files": [
+                                          {
+                                              "pattern": "${rtRepoGen}-${rtSpace}/${artifactPath}/${artifact}",
+                                              "target": "${destFolder}/",
+                                              "flat":"true"
+                                            }
+                                         ]
+                                        }"""
+
+    rtServer.download spec: downloadSpec, failNoOp: true
+
+    // Sometimes promotion takes some time let's wait and retry
+    def count = 0
+    while (count++ < 10 && !fileExists("${destFolder}/${artifact}")) {
+        sleep(5)
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Deploy all apps on provided PCF target
+void deployAppsOnPcf(targetCredential, targetLoginUrl, targetHost, targetHostPrivate) {
+    sh "cf logout"
+    withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: "${targetCredential}", usernameVariable: 'SECRET_USER_ID_SPACED', passwordVariable: 'SECRET_PASSWORD']]) {
+        // Log in to cf once
+        // Trimming UserID as Jenkins credential manager adds whitespace automatically.
+        sh "cf login -a ${targetLoginUrl} -o ${cfOrganization} -s ${cfSpace} -u ${env.SECRET_USER_ID_SPACED.trim()} -p ${env.SECRET_PASSWORD}"
+    }
+
+    if (hasXXXXXXXX) {
+        pushAppOnPcf(XXXXXXXXDir, XXXXXXXXAppName, targetHost)
+    }
+
+    if (hasXXXXXXXXBuild) {
+        pushAppOnPcf(XXXXXXXXDir, XXXXXXXXAppName, targetHost)
+    }
+
+    if (hasXXXXXXXXBuild) {
+        pushAppOnPcf(XXXXXXXXDir, XXXXXXXXAppName, targetHost)
+    }
+
+    if (hasXXXXXXXXBuild) {
+        pushAppOnPcf(XXXXXXXXServiceDir, XXXXXXXXServiceAppName, targetHostPrivate)
+    }
+
+    // Start all new instances after all have been successfully pushed
+    sh "cat ${newInstancesfileName} | while read line; do cf start \$line; done"
+
+    // Remove old instance of the same branches
+    sh "cat ${oldInstancesfileName} | while read line; do cf stop \$line; done"
+    sh "cat ${oldInstancesfileName} | while read line; do cf delete -f \$line; done"
+
+
+    try {
+        // Some specific cleanup of old named instances(to delete later when done)
+        sh "cf apps | grep \"conan-client-\" | awk '{print \$1}' | while read line; do cf stop \$line; done"
+        sh "cf apps | grep \"conan-client-\" | awk '{print \$1}' | while read line; do cf delete -f \$line; done"
+        sh "cf apps | grep \"db-executor-\" | awk '{print \$1}' | while read line; do cf stop \$line; done"
+        sh "cf apps | grep \"db-executor-\" | awk '{print \$1}' | while read line; do cf delete -f \$line; done"
+        sh "cf apps | grep \"conan-auth\" | awk '{print \$1}' | while read line; do cf stop \$line; done"
+        sh "cf apps | grep \"conan-auth\" | awk '{print \$1}' | while read line; do cf delete -f \$line; done"
+
+        // Clean dead routes
+        sh "cf delete-orphaned-routes -f"
+    } catch (Exception e) {
+        // No need to fail the build here
+        echo '>>>>> Error while cleaning up instances: ' + e.toString()
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Push an app on the provided PCF target
+void pushAppOnPcf(String appDir, String appName, String targetHost) {
+    String cfInstanceName = appName + "-" + buildVersion;
+    String buildInfo = "BranchName=" + env.BRANCH_NAME + ",CommitHash=" + env.GIT_COMMIT + ",BuildTime=" + formattedStartTimeInfo + ",BuildVersion=" + buildVersion + ",InstanceName:" + cfInstanceName;
+    dir(appDir) {
+        withCredentials([file(credentialsId: "${secretVarsFileCredentialId}", variable: 'secretVarsFile')]) {
+            //Store all old instance of the same branch (don't remove other branches)
+            sh "cf apps | grep ${appName} | grep ${reducedBranchName} | grep -v ${buildVersion} | awk '{print \$1}' >> ${oldInstancesfileName}"
+            sh "cf push --no-start -f manifest.yml ${cfVarFiles} --vars-file ${env.secretVarsFile} --var CF_INSTANCE_NAME=${cfInstanceName} --var CF_HOST_PREFIX=${hostPrefix} --var CF_HOST=${targetHost} --var BUILD_INFO=${buildInfo} "
+            sh "echo ${cfInstanceName} >> ${newInstancesfileName}"
+            echo ">>>>> Pushed on PCF: ${cfInstanceName} -> ${hostPrefix}.${targetHost}"
+        }
+    }
+}
+
+void cleanupNewInstancesOnFailure() {
+    try {
+        sh "cat ${newInstancesfileName} | while read line; do cf stop \$line; done"
+        sh "cat ${newInstancesfileName} | while read line; do cf delete -f \$line; done"
+    } catch (Exception e) {
+        // No need to fail the build here
+        echo '>>>>> Error while cleaning up instances on failure: ' + e.toString()
+    }
+}
